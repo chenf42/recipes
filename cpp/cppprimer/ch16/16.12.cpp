@@ -9,6 +9,7 @@
 // friend class BlobPtr<T>
 // 无法通过编译。
 template <typename T> class BlobPtr;
+template <typename T> class ConstBlobPtr;
 
 template <typename T> class Blob;
 // 友元函数需要前置声明
@@ -28,8 +29,8 @@ public:
   using value_type = T;
   using size_type = typename std::vector<T>::size_type;  // 此处 typename 不可省略。否则编译报错。
   using iterator = BlobPtr<T>;
-  //using const_iterator = const iterator;//const BlobPtr<T>;
-  //typedef const iterator const_iterator;
+  //using const_iterator = const iterator;  // 根本没法这样用
+  using const_iterator = ConstBlobPtr<T>;
 
   Blob() : data_(std::make_shared<std::vector<T>>()) {}
   Blob(std::initializer_list<T> il) : data_(std::make_shared<std::vector<T>>(il)) {}
@@ -57,10 +58,8 @@ public:
 
   iterator begin();
   iterator end();
-  //const_iterator cbegin() const;
-  //const_iterator cend() const;
-  const iterator cbegin() const;
-  const iterator cend() const;
+  const_iterator cbegin();
+  const_iterator cend();
 
   size_type size() const { return data_->size(); }
   bool empty() const { return data_->empty(); }
@@ -89,6 +88,7 @@ public:
   }
 
   friend class BlobPtr<T>;
+  friend class ConstBlobPtr<T>;
   // 这里的 <T> 是必须要的
   // 在类代码内可以简化模板类名，不提供模板参数 T，但当前这个类是 Blob，
   // 只有 Blob 可以省略模板参数，其他友元类、函数都不能省去。
@@ -175,13 +175,13 @@ public:
       curr_(sz)
   {}
 
-  T &operator*() {
-    //auto p = check(curr_, "dereference past end");
-    //return (*p)[curr_];
-    return const_cast<T &>(*static_cast<const BlobPtr &>(*this));
-  }
+  // T &operator*() {
+  //   //auto p = check(curr_, "dereference past end");
+  //   //return (*p)[curr_];
+  //   return const_cast<T &>(*static_cast<const BlobPtr &>(*this));
+  // }
 
-  const T &operator*() const {
+  T &operator*() {
     auto p = check(curr_, "dereference past end");
     return (*p)[curr_];
   }
@@ -240,8 +240,27 @@ template <typename T> bool operator!=(const BlobPtr<T> &lhs, const BlobPtr<T> &r
 }
 
 // 没法写这样的 using 语句。但也没有必要了，直接在 Blob<T> 里面定义 iterator / const_iterator 即可。
+// NOTE!：根据后来的实验结果，根本没法这样实现，ConstBlobPtr<T> 就该是个单独的模板！
 //template <typename T>
 //using ConstBlobPtr<T> = const BlobPtr<T>;
+
+template <typename T>
+class ConstBlobPtr {
+  BlobPtr<T> impl_;
+public:
+  ConstBlobPtr() {}
+  ConstBlobPtr(Blob<T> &a, size_t sz = 0)
+    : impl_(a, 0)
+  {}
+
+  const T &operator*() { return *impl_; }
+
+  ConstBlobPtr &operator++() { return ++impl_; }
+  ConstBlobPtr &operator--() { return --impl_; }
+
+  ConstBlobPtr operator++(int) { return impl_++; }
+  ConstBlobPtr operator--(int) { return impl_--; }
+};
 
 template <typename T>
 typename Blob<T>::iterator Blob<T>::begin() {
@@ -254,13 +273,13 @@ typename Blob<T>::iterator Blob<T>::end() {
 }
 
 template <typename T>
-const typename Blob<T>::iterator Blob<T>::cbegin() const {
-  return BlobPtr<T>(*this);
+typename Blob<T>::const_iterator Blob<T>::cbegin() {
+  return ConstBlobPtr<T>(*this);
 }
 
 template <typename T>
-const typename Blob<T>::iterator Blob<T>::cend() const {
-  return BlobPtr<T>(*this, size());
+typename Blob<T>::const_iterator Blob<T>::cend() {
+  return ConstBlobPtr<T>(*this, size());
 }
 
 int main(int argc, char **argv) {
@@ -362,8 +381,8 @@ int main(int argc, char **argv) {
   assert(*--bpi01 == 1);  // 前置--
   *bpi01 = 2;
 
-  const BlobPtr<int> cbpi {bi01};
-  assert(*cbpi == 2);
+  //const BlobPtr<int> cbpi {bi01};
+  //assert(*cbpi == 2);
   // *cbpi = 3;   // 这里无法编译，因为不能修改常量，正是我们期望的结果
 
   /**
@@ -382,9 +401,9 @@ int main(int argc, char **argv) {
   std::cout << '\n';
 
 
-  auto cit = bi000.cbegin();
+  Blob<int>::const_iterator cit = bi000.cbegin();
   assert(*cit == 3);
-
+  // *cit = 4;  // 编译报错，复合预期
 
   return 0;
 }
